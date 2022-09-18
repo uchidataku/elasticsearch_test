@@ -19,4 +19,4 @@
 /config/**/*.key
 /config/master.key
 
-/docker/elasticsearch/data/*
+/docker/elasticsearch/data/nodes/*
