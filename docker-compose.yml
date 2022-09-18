@@ -1,0 +1,80 @@
+version: "3"
+
+volumes:
+  ignore_dir:
+
+services:
+  app:
+    restart: always
+    build: .
+    command: /bin/sh -c "rm -f tmp/pids/server.pid && bundle exec rails s"
+    volumes:
+      - ./:/app
+      - ignore_dir:/app/tmp
+      - ignore_dir:/app/public
+      - ignore_dir:/app/tmp/sockets
+    depends_on:
+      - db
+      - fluentd
+    env_file:
+      - .env
+    environment:
+      RAILS_ENV: development
+
+  db:
+    restart: always
+    image: postgres:11
+    ports:
+      - 5432:5432
+    environment:
+      POSTGRES_USER: deploy
+      POSTGRES_PASSWORD: password
+    volumes:
+      - ./tmp/db/data:/var/lib/postgresql/data:z
+
+  nginx:
+    build: ./docker/nginx/
+    # Nginxをforegroundで動かすため、daemonをoff
+    command: nginx -g 'daemon off;'
+    volumes:
+      - ./docker/nginx.conf:/etc/nginx/conf.d/default.conf
+      - ignore_dir:/app/tmp/sockets
+    ports:
+      - 80:80
+    links:
+      - app
+      - fluentd
+    logging:
+      driver: fluentd
+      options:
+        tag: nginx
+        # 初期接続をブロックしない
+        fluentd-async-connect: "true"
+
+  elasticsearch:
+    build: ./docker/elasticsearch/
+    environment:
+      - discovery.type=single-node
+      - cluster.name=docker-cluster
+      - bootstrap.memory_lock=true
+      - ES_JAVA_OPTS=-Xms512m -Xmx512m
+    ports:
+      - 9200:9200
+    volumes:
+      - ./docker/elasticsearch/data:/usr/share/elasticsearch/data
+
+  fluentd:
+    build: ./docker/fluentd/
+    volumes:
+      - ./docker/fluentd/fluent.conf:/fluentd/etc/fluent.conf
+    ports:
+      - 24224:24224
+    depends_on:
+      - elasticsearch
+
+  kibana:
+    build: ./docker/kibana/
+    ports:
+      - 5601:5601
+    depends_on:
+      - elasticsearch
